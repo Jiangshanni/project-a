@@ -1,0 +1,228 @@
+---
+title: "Data Visualization Final Project"
+author: "Joseph Krongold"
+date: "4/29/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+Loading in the data and processing:
+
+```{R}
+
+states <- read.csv("/Users/josephkrongold/Desktop/NHIS_DATA/NHIS_state_ins_rate.csv")
+states$Year <- as.factor(states$Year)
+colnames(states) <- tolower(colnames(states))
+
+expansion <- read.csv("/Users/josephkrongold/Desktop/NHIS_DATA/NHIS_expansion_ins_rate.csv")
+expansion$Medicaid.expansion <- as.factor(expansion$Medicaid.expansion)
+
+#NHIS_2011 <- load("/Users/josephkrongold/Desktop/NHIS_DATA/personsx2011.rda")
+#NHIS_2012 <- load("/Users/josephkrongold/Desktop/NHIS_DATA/personsx2012.rda")
+
+non_exp_states <- c("Alabama", "Florida", "Georgia", "Idaho", "Kansas", "Maine", "Mississippi",
+                    "Missouri", "Nebraska", "North Carolina", "Oklahoma", "South Carolina",
+                    "South Dakota", "Tennessee", "Texas", "Utah", "Virginia", "Wisconsin", "Wyoming")
+
+states$exp_ever <- ifelse(states$state %in% non_exp_states,"no medicaid expansion", " medicaid expansion")
+
+```
+
+```{R}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(ggthemes))
+suppressPackageStartupMessages(library(dplyr))
+
+#overall uninsured rate
+ggplot(data = expansion, aes(x = Year, y = Uninsured, group = Medicaid.expansion)) + geom_line(aes(color = Medicaid.expansion))
+
+#view for each state. Could do this in Shiny where the user selects a state of interest that gets a color change or shown individually
+
+ggplot(data = states, aes(x = year, y = uninsured, group = state)) +
+  geom_line(aes(color = exp_ever))
+
+#with facet for medicaid expansion
+
+ggplot(data = states, aes(x = year, y = uninsured, group = state)) +
+  geom_line(aes(color = exp_ever)) + facet_grid(exp_ever ~ .)
+
+#same idea but with bar graphs for each state and year for the uninsurance rate
+ggplot(data = states, aes(x = state, y = uninsured, fill = year)) +
+  geom_bar(stat="Identity", position=position_dodge()) + facet_grid(exp_ever ~ .) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+#example of a state level view, state of interest (Utah here) could be a user input
+ggplot(data = states[states$state == "Utah", ], aes(x = state, y = uninsured, fill = year)) +
+  geom_bar(stat="Identity", position=position_dodge())
+
+
+```
+
+setup code:
+
+```{R}
+
+suppressPackageStartupMessages(library(maps))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(gridExtra))
+
+us.states <- map_data("state")
+us.states <- as_data_frame(us.states)
+us.states <- dplyr::rename(us.states, state=region)
+us.states$subregion = NULL
+us.states$state <- str_to_title(us.states$state)
+# Add State Abbreviations and Centers
+statenames <- as_data_frame(cbind(state=state.name, 
+                state.abb = state.abb, state.center.x = state.center$x, 
+                state.center.y = state.center$y))
+statenames <- statenames %>% mutate_each_(funs(as.numeric), 
+                vars=c("state.center.x","state.center.y"))
+us.states <- left_join(us.states,statenames)
+
+
+```
+
+and the maps:
+
+```{R}
+
+merge_2015 <- left_join(states[states$year == 2015,], us.states)
+merge_2014 <- left_join(states[states$year == 2014,], us.states)
+merge_2013 <- left_join(states[states$year == 2013,], us.states)
+
+un_2015 <- ggplot(merge_2015,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = uninsured), color="white") + 
+  scale_fill_gradientn(limits = c(0,25), colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "2015 Uninsurance Rate")
+
+un_2014 <- ggplot(merge_2014,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = uninsured), color="white") + 
+  scale_fill_gradientn(limits = c(0,25), colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "2014 Uninsurance Rate")
+
+un_2013 <- ggplot(merge_2013,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = uninsured), color="white") + 
+  scale_fill_gradientn(limits = c(0,25), colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "2013 Uninsurance Rate")
+
+grid.arrange(un_2013, un_2014, un_2015, ncol = 1, nrow = 3)
+un_2013; un_2014; un_2015
+```
+
+Breakouts of maps by expansion and not for each year
+
+```{R}
+
+merge_2015_exp <- left_join(states[states$year == 2015 & states$expansion == 1,], us.states)
+merge_2015_non_exp <- left_join(states[states$year == 2015 & states$expansion == 0,], us.states)
+
+un_2015_exp <- ggplot(merge_2015_exp,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = uninsured), color="white") + 
+  scale_fill_gradientn(limits = c(0,25), colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "2015 Uninsurance Rate in expansion states")
+
+un_2015_non_exp <- ggplot(merge_2015_non_exp,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = uninsured), color="white") + 
+  scale_fill_gradientn(limits = c(0,25), colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "2015 Uninsurance Rate in non-expansion states")
+
+grid.arrange(un_2015_exp, un_2015_non_exp, nrow=2,ncol=1)
+
+
+merge_2014_exp <- left_join(states[states$year == 2014 & states$expansion == 1,], us.states)
+merge_2014_non_exp <- left_join(states[states$year == 2014 & states$expansion == 0,], us.states)
+
+un_2014_exp <- ggplot(merge_2014_exp,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = uninsured), color="white") + 
+  scale_fill_gradientn(limits = c(0,25), colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "2014 Uninsurance Rate in expansion states")
+
+un_2014_non_exp <- ggplot(merge_2014_non_exp,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = uninsured), color="white") + 
+  scale_fill_gradientn(limits = c(0,25), colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "2014 Uninsurance Rate in non-expansion states")
+
+grid.arrange(un_2014_exp, un_2014_non_exp, nrow=2,ncol=1)
+
+
+merge_2013_non_exp <- left_join(states[states$year == 2013 & states$expansion == 0,], us.states)
+
+un_2013_non_exp <- ggplot(merge_2013_non_exp,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = uninsured), color="white") + 
+  scale_fill_gradientn(limits = c(0,25), colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "2013 Uninsurance Rate in non-expansion states (all)")
+
+un_2013_non_exp
+```
+
+Change in uninsured rate, public insurance rate, and private insurance from 2013 to 2015 in each state
+
+```{R}
+
+tmp <- cbind.data.frame(state = c(as.character(unique(states$state))),
+             un_2013 = c(states$uninsured[states$year == 2013]),
+             un_2015 = c(states$uninsured[states$year == 2015]))
+tmp$change <- tmp$un_2015 - tmp$un_2013
+tmp$medicaid_expansion <- ifelse(tmp$state %in% non_exp_states,"no expansion","expanded Medicaid")
+str(tmp)
+
+merge_change <- left_join(tmp, us.states)
+
+change_map <- ggplot(merge_change,aes(x = long, y = lat, group=group)) + 
+  geom_polygon(aes(fill = change), color="white") + 
+  scale_fill_gradientn(colours=c("white","blue")) +
+  geom_text(data=statenames, inherit.aes = FALSE, 
+            aes(label=state.abb, x=state.center.x, y=state.center.y), 
+            colour="white", size=2) +
+  theme_tufte() + coord_map(projection = "mercator") +
+  ggtitle(label = "change in unisurance rate from 2013 to 2015")
+
+change_map
+
+change_bar <- ggplot(tmp, aes(x = reorder(state,-change), y = change, fill = medicaid_expansion)) +
+  geom_bar(stat="identity") + coord_flip() + labs(x = "state", y = "change in uninsured rate")
+
+change_bar + scale_x_discrete(position = "top")
+```
+
+
+
+
